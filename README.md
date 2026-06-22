@@ -132,62 +132,74 @@ public class Todo
 ## 6. Program.cs
 
 ```csharp
+// Importerer Dapper — hjelper oss å kjøre SQL og konvertere resultatet til C#-objekter
 using Dapper;
+
+// Importerer SqlConnection — selve tilkoblingen til SQL Server
 using Microsoft.Data.SqlClient;
-using TodoApi;
+
+// Importerer modellene våre (ToDo-klassen)
+using ToDoApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Legg til tjenester for Swagger
+// Registrer tjenester for Swagger — må gjøres før builder.Build()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Bygg appen — etter dette kan vi ikke lenger registrere tjenester
 var app = builder.Build();
 
-// Vis Swagger kun under utvikling — ikke i produksjon
+// Aktiver Swagger kun under utvikling — ikke i produksjon
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
     app.UseSwaggerUI();
+    app.UseSwagger();
 }
 
 // Connection string — beskriver hvor databasen er og hvordan vi kobler til
-var connectionString = "Server=localhost;Database=TodoDb;Trusted_Connection=True;";
+// Server=localhost       → SQL Server kjører på denne maskinen
+// Database=ToDoDb        → navnet på databasen vi vil bruke
+// Trusted_Connection     → bruk Windows-pålogging, ingen passord trengs
+// TrustServerCertificate → stol på sertifikatet lokalt (unngår SSL-feil)
+var connectionString = "Server=localhost;Database=ToDoDb;Trusted_Connection=True;TrustServerCertificate=True;";
 
-// GET /api/todos — hent alle todos
+// GET /api/todos — hent alle todos fra databasen
 app.MapGet("/api/todos", async () =>
 {
-    // Åpne en tilkobling til databasen
-    using var connection = new SqlConnection(connectionString);
+    // Åpne en tilkobling til databasen — lukkes automatisk når vi er ferdige (await using)
+    await using var connection = new SqlConnection(connectionString);
 
-    // Kjør SQL og få resultatet tilbake som en liste av Todo-objekter
-    var todos = await connection.QueryAsync<Todo>("SELECT * FROM Todo");
+    // Kjør SQL og konverter hver rad til et ToDo-objekt
+    var todos = await connection.QueryAsync<ToDo>("SELECT * FROM Todo");
 
     // Returner listen med statuskode 200 OK
     return Results.Ok(todos);
 });
 
-// POST /api/todos — legg til en ny todo
-app.MapPost("/api/todos", async (Todo todo) =>
+// POST /api/todos — legg til en ny todo i databasen
+app.MapPost("/api/todos", async (ToDo todo) =>
 {
     // Åpne en tilkobling til databasen
-    using var connection = new SqlConnection(connectionString);
+    await using var connection = new SqlConnection(connectionString);
 
+    // SQL for å sette inn en ny rad
+    // @Name og @IsComplete hentes automatisk fra todo-objektet av Dapper
+    // SCOPE_IDENTITY() returnerer den auto-genererte IDen fra INSERT-en
     var sql = """
-        INSERT INTO Todo (Name, IsComplete)
-        VALUES (@Name, @IsComplete);
-        SELECT CAST(SCOPE_IDENTITY() AS INT);
-        """;
+              INSERT INTO Todo (Name, IsComplete)
+              VALUES (@Name, @IsComplete);
+              SELECT CAST(SCOPE_IDENTITY() AS INT);
+              """;
 
-    // Kjør SQL — @Name og @IsComplete hentes automatisk fra todo-objektet
-    // QuerySingleAsync<int> returnerer den nye IDen som ble generert
-    var newId = await connection.QuerySingleAsync<int>(sql, todo);
+    // Kjør SQL og hent den nye IDen som ble generert
+    var newId = await connection.ExecuteScalarAsync<int>(sql, todo);
 
     // Sett den nye IDen på todo-objektet
     todo.Id = newId;
 
     // Returner den nye todo-en med statuskode 201 Created
-    return Results.Created($"/api/todos/{todo.Id}", todo);
+    return Results.Created($"/api/todos/{newId}", todo);
 });
 
 app.Run();
