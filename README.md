@@ -66,7 +66,7 @@ dotnet add package Swashbuckle.AspNetCore
 3. Velg **Use connection string** og skriv inn:
 
 ```
-Server=localhost;Database=toDoDb;Trusted_Connection=True;
+Server=localhost;Database=master;Trusted_Connection=True;
 ```
 
 4. Klikk **Test Connection** → godta driver-nedlasting hvis Rider spør → **OK**
